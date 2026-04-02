@@ -11,6 +11,7 @@ __pycache__/
 *.pyd
 build/
 dist/
+*.egg-info/
 data/
 .codex
 .idea/
