@@ -1,0 +1,17 @@
+.env
+.env.local
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+build/
+dist/
+data/
+.codex
+.idea/
+.vscode/
