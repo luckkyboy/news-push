@@ -20,6 +20,6 @@ class Settings:
                 "NEWS_IMAGE_BASE_URL",
                 "https://raw.githubusercontent.com/luckkyboy/news-data/main/static/images",
             ),
-            state_file=Path(os.environ.get("STATE_FILE", "/tmp/news-push/state.json")),
+            state_file=Path(os.environ.get("STATE_FILE", "/tmp/news-push/state.db")),
             timezone=os.environ.get("TZ", "Asia/Shanghai"),
         )

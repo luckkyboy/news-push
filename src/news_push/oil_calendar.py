@@ -43,10 +43,9 @@ class ChinaHolidaySource:
     def get_year_calendar(self, year: int) -> tuple[set[date], set[date]]:
         url = HOLIDAY_DATA_URL_TEMPLATE.format(year=year)
         response = retry_http_call(
-            lambda: httpx.get(url, timeout=self.timeout),
+            lambda: _get_with_status_check(url, timeout=self.timeout),
             operation=f"fetch holiday calendar {url}",
         )
-        response.raise_for_status()
         payload = response.json()
         holidays: set[date] = set()
         working_days: set[date] = set()
@@ -144,3 +143,9 @@ class OilCalendarGenerator:
             if _is_workday(target, holidays, working_days):
                 counted += 1
         return target
+
+
+def _get_with_status_check(url: str, *, timeout: float) -> httpx.Response:
+    response = httpx.get(url, timeout=timeout)
+    response.raise_for_status()
+    return response

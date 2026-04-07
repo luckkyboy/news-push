@@ -36,11 +36,16 @@ class WeComBotClient:
 
     def _post(self, payload: dict[str, Any]) -> None:
         response = retry_http_call(
-            lambda: httpx.post(self.webhook_url, json=payload, timeout=self.timeout),
+            lambda: _post_with_status_check(self.webhook_url, payload, timeout=self.timeout),
             operation=f"post wecom message to {self.webhook_url}",
         )
-        response.raise_for_status()
         body = response.json()
         if body.get("errcode") != 0:
             raise RuntimeError(f"wecom webhook error: {body}")
         logger.info("wecom message delivered: %s", payload["msgtype"])
+
+
+def _post_with_status_check(url: str, payload: dict[str, Any], *, timeout: float) -> httpx.Response:
+    response = httpx.post(url, json=payload, timeout=timeout)
+    response.raise_for_status()
+    return response

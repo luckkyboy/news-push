@@ -77,14 +77,14 @@ scripts/
   - 默认值：`https://raw.githubusercontent.com/luckkyboy/news-data/main/static/images`
 - `STATE_FILE`
   - 选填
-  - 默认值：`/tmp/news-push/state.json`
-  - 用于记录“当天是否已发送”
+  - 默认值：`/tmp/news-push/state.db`
+  - SQLite 状态库文件，用于记录“当天是否已发送”
   - 生产环境建议挂载到持久化目录
 - `TZ`
   - 选填
   - 默认值：`Asia/Shanghai`
 
-项目当前不再提供 `.env.example`。本地运行时直接在 shell 中导出环境变量即可。
+示例见 [`./.env.example`](./.env.example)。本地运行时也可以直接在 shell 中导出环境变量。
 
 ## 本地运行
 
@@ -113,7 +113,7 @@ http://0.0.0.0:8000
 ```bash
 WECOM_WEBHOOK_URL='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key' \
 NEWS_IMAGE_BASE_URL='https://raw.githubusercontent.com/luckkyboy/news-data/main/static/images' \
-STATE_FILE='/tmp/news-push/state.json' \
+STATE_FILE='/tmp/news-push/state.db' \
 TZ='Asia/Shanghai' \
 uv run --project . python -m news_push
 ```
@@ -125,6 +125,153 @@ uv run --project . python scripts/generate_oil_calendar.py
 ```
 
 运行时会按当前年份生成 `src/news_push/data/oil_calendar_<year>.json`，如果文件已存在会直接覆盖，同时把生成出的 JSON 打印到标准输出。
+
+## Docker 部署
+
+推荐使用仓库根目录自带的 `docker-compose.yml` 部署。
+
+默认配置只会把服务绑定到宿主机 `127.0.0.1:8000`，适合配合 Nginx、Caddy 或 SSH 隧道访问，避免把手动触发接口直接暴露到公网。
+
+### 1. 服务器首次部署
+
+下面以 Ubuntu 服务器为例，假设项目目录放在 `/opt/news-push`。
+
+安装 Docker 和 Compose：
+
+```bash
+apt-get update
+apt-get install -y docker.io docker-compose-v2
+service docker start
+```
+
+拉取项目代码：
+
+```bash
+mkdir -p /opt
+cd /opt
+git clone <your-repo-url> news-push
+cd /opt/news-push
+```
+
+用真实 webhook 直接启动：
+
+```bash
+WECOM_WEBHOOK_URL='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key' \
+bash scripts/deploy_docker.sh
+```
+
+部署完成后检查：
+
+```bash
+curl http://127.0.0.1:8000/health
+curl http://127.0.0.1:8000/status
+docker compose ps
+docker compose logs -f
+```
+
+### 2. 准备环境变量
+
+可以直接复制示例文件：
+
+```bash
+cp .env.example .env
+```
+
+然后至少填写企业微信 webhook：
+
+```dotenv
+WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key
+```
+
+可选变量：
+
+- `NEWS_IMAGE_BASE_URL`
+- `TZ`
+
+`STATE_FILE` 在 Compose 中已固定为容器内 `/data/state.db`，不用单独写到 `.env`。
+
+### 3. 准备持久化目录
+
+```bash
+mkdir -p data
+```
+
+Compose 会把宿主机的 `./data` 挂载到容器内 `/data`，用于保存 SQLite 状态库，避免容器重建后重复推送。
+
+### 4. 构建并启动
+
+```bash
+docker compose up -d --build
+```
+
+也可以直接使用仓库自带脚本：
+
+```bash
+bash scripts/deploy_docker.sh
+```
+
+如果你想一次性传入真实 webhook 并生成或更新 `.env`：
+
+```bash
+WECOM_WEBHOOK_URL='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key' \
+bash scripts/deploy_docker.sh
+```
+
+查看运行日志：
+
+```bash
+docker compose logs -f
+```
+
+停止服务：
+
+```bash
+docker compose down
+```
+
+更新服务：
+
+```bash
+git pull
+docker compose up -d --build
+```
+
+### 5. 验活
+
+健康检查：
+
+```bash
+curl http://127.0.0.1:8000/health
+```
+
+查看任务状态：
+
+```bash
+curl http://127.0.0.1:8000/status
+```
+
+手动触发图片新闻检查：
+
+```bash
+curl -X POST http://127.0.0.1:8000/jobs/news-image/run
+```
+
+手动触发油价检查：
+
+```bash
+curl -X POST http://127.0.0.1:8000/jobs/oil/run
+```
+
+### 6. 运行说明
+
+- `./data/state.db` 是幂等控制的核心状态库文件，不能随意删除
+- `scripts/deploy_docker.sh` 会自动创建 `./data` 目录，并在每次执行时用当前 shell 环境补全或更新 `.env`
+- 如果需要对外开放接口，建议放在反向代理后面并自行补访问控制，不要直接改成公网裸露端口
+- 升级前建议先备份 `./data/state.db`
+- 如果升级后需要回滚，先切回旧代码版本，再执行 `docker compose up -d --build`
+- `POST /jobs/oil/run` 在非调价窗口日返回 `not_adjustment_day` 属于正常行为
+- 进入 2027 年前，需要补充新的油价调价日 JSON，否则油价任务不会命中新年度日期
+- `WECOM_WEBHOOK_URL` 未配置时，服务能启动，但两个手动触发接口会返回 `missing_webhook`
 
 ## HTTP 接口
 
@@ -184,9 +331,9 @@ uv run --project . python scripts/generate_oil_calendar.py
 
 ## 状态持久化
 
-服务通过 `STATE_FILE` 保存已发送记录，避免重复推送。
+服务通过 `STATE_FILE` 指向的 SQLite 文件保存已发送记录，避免重复推送。
 
-状态按通道和日期保存，例如：
+逻辑上的状态内容按通道和日期组织，等价于下面这类结构：
 
 ```json
 {
@@ -206,7 +353,7 @@ uv run --project . python scripts/generate_oil_calendar.py
 
 建议：
 
-- 开发环境可直接用默认 `/tmp/news-push/state.json`
+- 开发环境可直接用默认 `/tmp/news-push/state.db`
 - 生产环境务必将 `STATE_FILE` 指向挂载卷或宿主机目录
 
 ## 测试
@@ -242,7 +389,7 @@ uv run --project . pytest tests/test_app.py
 ```bash
 WECOM_WEBHOOK_URL='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key' \
 NEWS_IMAGE_BASE_URL='https://raw.githubusercontent.com/luckkyboy/news-data/main/static/images' \
-STATE_FILE='/tmp/news-push/state.json' \
+STATE_FILE='/tmp/news-push/state.db' \
 TZ='Asia/Shanghai' \
 uv run --project . python -m news_push
 ```
@@ -273,12 +420,12 @@ curl http://127.0.0.1:8000/status
 - `jobs` 中包含 `news_image_push`
 - `jobs` 中包含 `oil_price_push`
 
-### 5. 验证状态文件是否可写
+### 5. 验证状态库文件是否可写
 
 如果你把 `STATE_FILE` 指到项目目录或其他持久化目录，例如：
 
 ```text
-./data/state.json
+./data/state.db
 ```
 
 第一次启动时文件可能还不存在；首次发送成功后应自动生成。

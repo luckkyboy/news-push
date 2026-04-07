@@ -3,6 +3,7 @@ import logging
 from datetime import date
 
 import httpx
+import pytest
 from docx import Document
 
 from news_push.oil import (
@@ -71,13 +72,30 @@ class DummyStore:
     def __init__(self, sent: bool = False) -> None:
         self.sent = sent
         self.marked: list[tuple[str, str, dict[str, str]]] = []
+        self.claimed: set[tuple[str, str]] = set()
+        self.released: list[tuple[str, str]] = []
 
     def has_sent(self, channel: str, day: str) -> bool:
         return self.sent
 
+    def claim_send(self, channel: str, day: str) -> bool:
+        key = (channel, day)
+        if self.sent or key in self.claimed:
+            return False
+        self.claimed.add(key)
+        return True
+
+    def release_claim(self, channel: str, day: str) -> None:
+        key = (channel, day)
+        self.claimed.discard(key)
+        self.released.append(key)
+
     def mark_sent(self, channel: str, day: str, metadata: dict[str, str]) -> None:
         self.marked.append((channel, day, metadata))
         self.sent = True
+
+    def complete_send(self, channel: str, day: str, metadata: dict[str, str]) -> None:
+        self.mark_sent(channel, day, metadata)
 
 
 def test_oil_job_sends_today_listing() -> None:
@@ -112,6 +130,7 @@ def test_oil_job_sends_today_listing() -> None:
             "oil_price",
             "2026-03-30",
             {
+                "content": "成品油价格按机制上调\n\n92号汽油 -- 7.12\n95号汽油 -- 7.61",
                 "title": "成品油价格按机制上调",
                 "page_url": "https://fgw.sc.gov.cn/sfgw/tzgg/2026/3/30/abcd.shtml",
             },
@@ -155,6 +174,24 @@ def test_oil_job_skips_when_today_is_not_adjustment_day() -> None:
 
     assert result.sent is False
     assert result.reason == "not_adjustment_day"
+    assert source.calls == {"listing": 0, "attachment": 0, "prices": 0}
+
+
+def test_oil_job_skips_when_send_claim_is_already_held() -> None:
+    source = DummyOilSource(None, None)
+    store = DummyStore()
+    assert store.claim_send("oil_price", "2026-03-30") is True
+    job = OilPriceJob(
+        source=source,
+        bot=DummyBot(),
+        state_store=store,
+        calendar=DummyCalendar(True),
+    )
+
+    result = job.run(today=date(2026, 3, 30))
+
+    assert result.sent is False
+    assert result.reason == "already_sent"
     assert source.calls == {"listing": 0, "attachment": 0, "prices": 0}
 
 
@@ -202,3 +239,34 @@ def test_oil_job_logs_skip_reason_when_listing_missing(caplog) -> None:
     assert result.sent is False
     assert result.reason == "listing_missing"
     assert "oil price skipped: listing_missing" in caplog.text
+
+
+def test_oil_job_releases_claim_when_send_fails() -> None:
+    class FailingBot:
+        def send_text(self, content: str) -> None:
+            raise RuntimeError("boom")
+
+    source = DummyOilSource(
+        listing=OilListingItem(
+            title="成品油价格按机制上调",
+            date_text="2026-03-30",
+            page_url="https://fgw.sc.gov.cn/sfgw/tzgg/2026/3/30/abcd.shtml",
+        ),
+        attachment=OilAttachment(
+            href="file.docx",
+            attachment_url="https://fgw.sc.gov.cn/sfgw/tzgg/2026/3/30/file.docx",
+        ),
+    )
+    store = DummyStore()
+    job = OilPriceJob(
+        source=source,
+        bot=FailingBot(),
+        state_store=store,
+        calendar=DummyCalendar(True),
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        job.run(today=date(2026, 3, 30))
+
+    assert store.released == [("oil_price", "2026-03-30")]
+    assert store.marked == []

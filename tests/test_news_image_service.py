@@ -2,6 +2,7 @@ import logging
 from datetime import date
 
 import httpx
+import pytest
 
 from news_push.news_image import DailyImageJob, ImageFetcher
 
@@ -29,13 +30,30 @@ class DummyStore:
     def __init__(self, sent: bool = False) -> None:
         self.sent = sent
         self.marked: list[tuple[str, str, dict[str, str]]] = []
+        self.claimed: set[tuple[str, str]] = set()
+        self.released: list[tuple[str, str]] = []
 
     def has_sent(self, channel: str, day: str) -> bool:
         return self.sent
 
+    def claim_send(self, channel: str, day: str) -> bool:
+        key = (channel, day)
+        if self.sent or key in self.claimed:
+            return False
+        self.claimed.add(key)
+        return True
+
+    def release_claim(self, channel: str, day: str) -> None:
+        key = (channel, day)
+        self.claimed.discard(key)
+        self.released.append(key)
+
     def mark_sent(self, channel: str, day: str, metadata: dict[str, str]) -> None:
         self.marked.append((channel, day, metadata))
         self.sent = True
+
+    def complete_send(self, channel: str, day: str, metadata: dict[str, str]) -> None:
+        self.mark_sent(channel, day, metadata)
 
 
 def test_run_sends_image_when_available() -> None:
@@ -70,6 +88,26 @@ def test_run_skips_when_already_sent() -> None:
     fetcher = DummyFetcher(exists=True)
     bot = DummyBot()
     store = DummyStore(sent=True)
+    job = DailyImageJob(
+        image_base_url="https://raw.githubusercontent.com/luckkyboy/news-data/main/static/images",
+        fetcher=fetcher,
+        bot=bot,
+        state_store=store,
+    )
+
+    result = job.run(today=date(2026, 3, 30))
+
+    assert result.sent is False
+    assert result.reason == "already_sent"
+    assert bot.images == []
+    assert fetcher.checked_urls == []
+
+
+def test_run_skips_when_send_claim_is_already_held() -> None:
+    fetcher = DummyFetcher(exists=True)
+    bot = DummyBot()
+    store = DummyStore()
+    assert store.claim_send("news_image", "2026-03-30") is True
     job = DailyImageJob(
         image_base_url="https://raw.githubusercontent.com/luckkyboy/news-data/main/static/images",
         fetcher=fetcher,
@@ -143,3 +181,24 @@ def test_run_logs_skip_reason_when_image_missing(caplog) -> None:
     assert result.sent is False
     assert result.reason == "image_missing"
     assert "news image skipped: image_missing" in caplog.text
+
+
+def test_run_releases_claim_when_send_fails() -> None:
+    class FailingBot:
+        def send_image(self, image_bytes: bytes) -> None:
+            raise RuntimeError("boom")
+
+    fetcher = DummyFetcher(exists=True)
+    store = DummyStore()
+    job = DailyImageJob(
+        image_base_url="https://raw.githubusercontent.com/luckkyboy/news-data/main/static/images",
+        fetcher=fetcher,
+        bot=FailingBot(),
+        state_store=store,
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        job.run(today=date(2026, 3, 30))
+
+    assert store.released == [("news_image", "2026-03-30")]
+    assert store.marked == []

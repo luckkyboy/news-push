@@ -37,6 +37,15 @@ class DummyStateStore:
         self.path = path
         self.data = {"news_image": {"2026-03-30": {"url": "https://example.com/news.png"}}}
 
+    def claim_send(self, channel: str, day: str) -> bool:
+        return True
+
+    def complete_send(self, channel: str, day: str, metadata: dict) -> None:
+        self.data.setdefault(channel, {})[day] = metadata
+
+    def release_claim(self, channel: str, day: str) -> None:
+        return None
+
     def snapshot(self) -> dict:
         return self.data
 
