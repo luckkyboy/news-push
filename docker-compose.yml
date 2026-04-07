@@ -1,5 +1,6 @@
 services:
   news-push:
+    image: news-push
     env_file:
       - .env
     build:

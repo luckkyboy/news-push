@@ -197,6 +197,7 @@ mkdir -p data
 ```
 
 Compose 会把宿主机的 `./data` 挂载到容器内 `/data`，用于保存 SQLite 状态库，避免容器重建后重复推送。
+Compose 构建出来的镜像名固定为 `news-push`。
 
 如果你之前在服务器上遇到：
 
@@ -274,6 +275,7 @@ curl -X POST http://127.0.0.1:8000/jobs/oil/run
 
 - `./data/state.db` 是幂等控制的核心状态库文件，不能随意删除
 - `scripts/deploy_docker.sh` 会自动创建 `./data/state.db`，修正 `./data` 和 `./data/state.db` 的写权限，并在每次执行时用当前 shell 环境补全或更新 `.env`
+- `scripts/deploy_docker.sh` 在部署成功后会执行 `docker image prune -f`，清理未使用的旧镜像
 - 如果需要对外开放接口，建议放在反向代理后面并自行补访问控制，不要直接改成公网裸露端口
 - 升级前建议先备份 `./data/state.db`
 - 如果升级后需要回滚，先切回旧代码版本，再执行 `docker compose up -d --build`

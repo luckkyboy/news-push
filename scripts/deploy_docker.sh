@@ -84,6 +84,7 @@ fi
 
 cd "${REPO_ROOT}"
 docker compose up -d --build
+docker image prune -f
 
 echo "deployment started"
 echo "health check: curl http://127.0.0.1:8000/health"
