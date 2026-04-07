@@ -198,6 +198,14 @@ mkdir -p data
 
 Compose 会把宿主机的 `./data` 挂载到容器内 `/data`，用于保存 SQLite 状态库，避免容器重建后重复推送。
 
+如果你之前在服务器上遇到：
+
+```text
+sqlite3.OperationalError: unable to open database file
+```
+
+通常是宿主机 `./data` 或 `./data/state.db` 对容器内的非 root 用户不可写。仓库自带的 `scripts/deploy_docker.sh` 现在会自动创建并放宽这两个路径的权限。
+
 ### 4. 构建并启动
 
 ```bash
@@ -265,7 +273,7 @@ curl -X POST http://127.0.0.1:8000/jobs/oil/run
 ### 6. 运行说明
 
 - `./data/state.db` 是幂等控制的核心状态库文件，不能随意删除
-- `scripts/deploy_docker.sh` 会自动创建 `./data` 目录，并在每次执行时用当前 shell 环境补全或更新 `.env`
+- `scripts/deploy_docker.sh` 会自动创建 `./data/state.db`，修正 `./data` 和 `./data/state.db` 的写权限，并在每次执行时用当前 shell 环境补全或更新 `.env`
 - 如果需要对外开放接口，建议放在反向代理后面并自行补访问控制，不要直接改成公网裸露端口
 - 升级前建议先备份 `./data/state.db`
 - 如果升级后需要回滚，先切回旧代码版本，再执行 `docker compose up -d --build`

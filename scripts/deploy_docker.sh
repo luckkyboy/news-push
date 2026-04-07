@@ -7,6 +7,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 ENV_FILE="${REPO_ROOT}/.env"
 ENV_EXAMPLE_FILE="${REPO_ROOT}/.env.example"
 DATA_DIR="${REPO_ROOT}/data"
+STATE_DB_FILE="${DATA_DIR}/state.db"
 
 DEFAULT_IMAGE_BASE_URL="https://raw.githubusercontent.com/luckkyboy/news-data/main/static/images"
 DEFAULT_TZ="Asia/Shanghai"
@@ -54,6 +55,9 @@ if ! command -v docker >/dev/null 2>&1; then
 fi
 
 mkdir -p "${DATA_DIR}"
+touch "${STATE_DB_FILE}"
+chmod 0777 "${DATA_DIR}"
+chmod 0666 "${STATE_DB_FILE}"
 
 if [[ ! -f "${ENV_EXAMPLE_FILE}" ]]; then
   cat > "${ENV_EXAMPLE_FILE}" <<EOF
