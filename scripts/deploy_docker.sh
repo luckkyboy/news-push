@@ -70,12 +70,10 @@ TZ=${DEFAULT_TZ}
 EOF
 fi
 
-env_file_existed=false
 resolved_webhook_url=""
 resolved_image_base_url=""
 resolved_timezone=""
 if [[ -f "${ENV_FILE}" ]]; then
-  env_file_existed=true
   resolved_webhook_url="$(resolve_env_value "WECOM_WEBHOOK_URL" "")"
   resolved_image_base_url="$(resolve_env_value "NEWS_IMAGE_BASE_URL" "${DEFAULT_IMAGE_BASE_URL}")"
   resolved_timezone="$(resolve_env_value "TZ" "${DEFAULT_TZ}")"
@@ -93,13 +91,6 @@ else
   resolved_timezone="$(resolve_env_value "TZ" "${DEFAULT_TZ}")"
   write_env_file "${resolved_webhook_url}" "${resolved_image_base_url}" "${resolved_timezone}"
   echo "generated .env file: ${ENV_FILE}"
-fi
-
-if [[ "${env_file_existed}" == true ]] && ! grep -Eq '^WECOM_WEBHOOK_URL=.+' "${ENV_FILE}"; then
-  echo "WECOM_WEBHOOK_URL is missing in ${ENV_FILE}"
-  echo "fill the webhook value, then rerun:"
-  echo "  bash scripts/deploy_docker.sh"
-  exit 1
 fi
 
 cd "${REPO_ROOT}"

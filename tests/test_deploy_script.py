@@ -131,6 +131,29 @@ def test_deploy_script_uses_existing_env_webhook_when_not_passed(tmp_path: Path)
     assert "WECOM_WEBHOOK_URL=https://example.com/existing-webhook" in env_file
 
 
+def test_deploy_script_allows_existing_env_without_webhook(tmp_path: Path) -> None:
+    repo_root, target_script = prepare_script_copy(tmp_path)
+    (repo_root / ".env").write_text(
+        "WECOM_WEBHOOK_URL=\nNEWS_IMAGE_BASE_URL=https://old.example.com\nTZ=Asia/Shanghai\n",
+        encoding="utf-8",
+    )
+    fake_bin = prepare_fake_docker(tmp_path)
+
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+    env.pop("WECOM_WEBHOOK_URL", None)
+
+    subprocess.run(
+        ["bash", str(target_script)],
+        cwd=repo_root,
+        env=env,
+        check=True,
+    )
+
+    env_file = (repo_root / ".env").read_text(encoding="utf-8")
+    assert "WECOM_WEBHOOK_URL=" in env_file
+
+
 def test_deploy_script_requires_webhook_only_when_env_file_missing(tmp_path: Path) -> None:
     repo_root, target_script = prepare_script_copy(tmp_path)
     fake_bin = prepare_fake_docker(tmp_path)
