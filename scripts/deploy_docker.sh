@@ -42,10 +42,13 @@ resolve_env_value() {
 }
 
 write_env_file() {
+  local webhook_url="$1"
+  local image_base_url="$2"
+  local timezone="$3"
   cat > "${ENV_FILE}" <<EOF
-WECOM_WEBHOOK_URL=$(resolve_env_value "WECOM_WEBHOOK_URL" "")
-NEWS_IMAGE_BASE_URL=$(resolve_env_value "NEWS_IMAGE_BASE_URL" "${DEFAULT_IMAGE_BASE_URL}")
-TZ=$(resolve_env_value "TZ" "${DEFAULT_TZ}")
+WECOM_WEBHOOK_URL=${webhook_url}
+NEWS_IMAGE_BASE_URL=${image_base_url}
+TZ=${timezone}
 EOF
 }
 
@@ -67,15 +70,32 @@ TZ=${DEFAULT_TZ}
 EOF
 fi
 
+env_file_existed=false
+resolved_webhook_url=""
+resolved_image_base_url=""
+resolved_timezone=""
 if [[ -f "${ENV_FILE}" ]]; then
-  write_env_file
+  env_file_existed=true
+  resolved_webhook_url="$(resolve_env_value "WECOM_WEBHOOK_URL" "")"
+  resolved_image_base_url="$(resolve_env_value "NEWS_IMAGE_BASE_URL" "${DEFAULT_IMAGE_BASE_URL}")"
+  resolved_timezone="$(resolve_env_value "TZ" "${DEFAULT_TZ}")"
+  write_env_file "${resolved_webhook_url}" "${resolved_image_base_url}" "${resolved_timezone}"
   echo "updated .env file: ${ENV_FILE}"
 else
-  write_env_file
+  if [[ -z "${WECOM_WEBHOOK_URL:-}" ]]; then
+    echo "WECOM_WEBHOOK_URL is required when .env does not exist"
+    echo "set the webhook value, then rerun:"
+    echo "  WECOM_WEBHOOK_URL='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key' bash scripts/deploy_docker.sh"
+    exit 1
+  fi
+  resolved_webhook_url="$(resolve_env_value "WECOM_WEBHOOK_URL" "")"
+  resolved_image_base_url="$(resolve_env_value "NEWS_IMAGE_BASE_URL" "${DEFAULT_IMAGE_BASE_URL}")"
+  resolved_timezone="$(resolve_env_value "TZ" "${DEFAULT_TZ}")"
+  write_env_file "${resolved_webhook_url}" "${resolved_image_base_url}" "${resolved_timezone}"
   echo "generated .env file: ${ENV_FILE}"
 fi
 
-if ! grep -Eq '^WECOM_WEBHOOK_URL=.+' "${ENV_FILE}"; then
+if [[ "${env_file_existed}" == true ]] && ! grep -Eq '^WECOM_WEBHOOK_URL=.+' "${ENV_FILE}"; then
   echo "WECOM_WEBHOOK_URL is missing in ${ENV_FILE}"
   echo "fill the webhook value, then rerun:"
   echo "  bash scripts/deploy_docker.sh"
