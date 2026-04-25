@@ -52,6 +52,9 @@ class OilAdjustmentCalendar:
     def _load_adjustment_dates_by_year(self) -> dict[int, set[str]]:
         data_dir = resources.files("news_push").joinpath("data")
         adjustment_dates_by_year: dict[int, set[str]] = {}
+        if not data_dir.is_dir():
+            logger.warning("oil adjustment calendar data directory missing: %s", data_dir)
+            return adjustment_dates_by_year
         for item in data_dir.iterdir():
             if not item.name.startswith("oil_calendar_") or item.suffix != ".json":
                 continue

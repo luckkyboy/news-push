@@ -1,0 +1,45 @@
+{
+  "calendar_name": "cn_refined_oil_adjustment_days",
+  "timezone": "Asia/Shanghai",
+  "generated_at": "2026-04-25",
+  "description": "Domestic refined oil adjustment window dates derived from the 10-working-day NDRC rule and the China holiday/workday calendar.",
+  "sources": [
+    {
+      "name": "国家发展改革委关于进一步完善成品油价格形成机制的通知",
+      "url": "https://zfxxgk.ndrc.gov.cn/web/iteminfo.jsp?id=19805"
+    },
+    {
+      "name": "2026 holiday and working-day data",
+      "url": "https://raw.githubusercontent.com/bastengao/chinese-holidays-data/master/data/2026.json"
+    }
+  ],
+  "year": 2026,
+  "anchor_previous_adjustment_date": "2025-12-22",
+  "adjustment_dates": [
+    "2026-01-06",
+    "2026-01-20",
+    "2026-02-03",
+    "2026-02-24",
+    "2026-03-09",
+    "2026-03-23",
+    "2026-04-07",
+    "2026-04-21",
+    "2026-05-08",
+    "2026-05-21",
+    "2026-06-04",
+    "2026-06-18",
+    "2026-07-03",
+    "2026-07-17",
+    "2026-07-31",
+    "2026-08-14",
+    "2026-08-28",
+    "2026-09-11",
+    "2026-09-24",
+    "2026-10-15",
+    "2026-10-29",
+    "2026-11-12",
+    "2026-11-26",
+    "2026-12-10",
+    "2026-12-24"
+  ]
+}
