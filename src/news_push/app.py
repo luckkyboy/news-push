@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from datetime import date
 import logging
 from importlib import resources
+from importlib.resources.abc import Traversable
+from pathlib import Path
+from threading import RLock
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -93,20 +97,52 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-def ensure_oil_calendar(settings: Settings, clock: LocalClock) -> OilAdjustmentCalendar:
-    target_year = clock.today().year
-    runtime_data_dir = settings.oil_calendar_data_dir
-    calendar = OilAdjustmentCalendar(data_dirs=[runtime_data_dir])
-    if calendar.has_year(target_year):
-        return calendar
+class AutoGeneratingOilCalendar:
+    def __init__(
+        self,
+        runtime_data_dir: Path,
+        anchor_data_dirs: list[Traversable],
+    ) -> None:
+        self.runtime_data_dir = runtime_data_dir
+        self.anchor_data_dirs = anchor_data_dirs
+        self._lock = RLock()
+        self._calendar = self._load_calendar()
 
-    logger.info("oil calendar missing for %s, generating into %s", target_year, runtime_data_dir)
-    OilCalendarGenerator(
-        data_dir=runtime_data_dir,
-        today=clock.today(),
+    def is_adjustment_day(self, target_day: date) -> bool:
+        self.ensure_year(target_day)
+        return self._calendar.is_adjustment_day(target_day)
+
+    def ensure_year(self, target_day: date) -> None:
+        target_year = target_day.year
+        if self._calendar.has_year(target_year):
+            return
+
+        with self._lock:
+            if self._calendar.has_year(target_year):
+                return
+            logger.info(
+                "oil calendar missing for %s, generating into %s",
+                target_year,
+                self.runtime_data_dir,
+            )
+            OilCalendarGenerator(
+                data_dir=self.runtime_data_dir,
+                today=target_day,
+                anchor_data_dirs=self.anchor_data_dirs,
+            ).generate(target_year)
+            self._calendar = self._load_calendar()
+
+    def _load_calendar(self) -> OilAdjustmentCalendar:
+        return OilAdjustmentCalendar(data_dirs=[self.runtime_data_dir])
+
+
+def ensure_oil_calendar(settings: Settings, clock: LocalClock) -> AutoGeneratingOilCalendar:
+    calendar = AutoGeneratingOilCalendar(
+        runtime_data_dir=settings.oil_calendar_data_dir,
         anchor_data_dirs=[resources.files("news_push").joinpath("data")],
-    ).generate(target_year)
-    return OilAdjustmentCalendar(data_dirs=[runtime_data_dir])
+    )
+    calendar.ensure_year(clock.today())
+    return calendar
 
 
 app = create_app()

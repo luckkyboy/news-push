@@ -220,3 +220,39 @@ def test_ensure_oil_calendar_uses_existing_current_year(tmp_path: Path) -> None:
     calendar = app_module.ensure_oil_calendar(settings, FixedClock(date(2027, 1, 1)))
 
     assert calendar.is_adjustment_day(date(2027, 1, 5)) is True
+
+
+def test_oil_calendar_generates_new_year_while_process_keeps_running(monkeypatch, tmp_path: Path) -> None:
+    generated: list[int] = []
+
+    class FakeOilCalendarGenerator:
+        def __init__(self, data_dir: Path, today: date, anchor_data_dirs: list[object]) -> None:
+            self.data_dir = data_dir
+
+        def generate(self, year: int) -> dict[str, object]:
+            generated.append(year)
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "year": year,
+                "adjustment_dates": [f"{year}-01-05"],
+            }
+            (self.data_dir / f"oil_calendar_{year}.json").write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+            return payload
+
+    monkeypatch.setattr(app_module, "OilCalendarGenerator", FakeOilCalendarGenerator)
+    settings = Settings(
+        wecom_webhook_url="",
+        image_base_url="https://example.com/images",
+        state_file=tmp_path / "state.json",
+        oil_calendar_data_dir=tmp_path / "oil-calendar",
+        timezone="Asia/Shanghai",
+    )
+
+    calendar = app_module.ensure_oil_calendar(settings, FixedClock(date(2026, 12, 31)))
+
+    assert generated == []
+    assert calendar.is_adjustment_day(date(2027, 1, 5)) is True
+    assert generated == [2027]
