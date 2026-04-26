@@ -6,6 +6,7 @@ from datetime import date
 
 import httpx
 
+from news_push.clock import Clock, LocalClock
 from news_push.http import retry_http_call
 
 logger = logging.getLogger(__name__)
@@ -43,9 +44,10 @@ class DailyImageJob:
     fetcher: ImageFetcher
     bot: object
     state_store: object
+    clock: Clock = LocalClock("Asia/Shanghai")
 
     def run(self, today: date | None = None) -> JobResult:
-        target_day = today or date.today()
+        target_day = today or self.clock.today()
         day_text = target_day.isoformat()
         if not self.state_store.claim_send("news_image", day_text):
             logger.info("news image skipped: already_sent")

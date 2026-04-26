@@ -6,11 +6,13 @@ import logging
 from dataclasses import dataclass
 from datetime import date
 from importlib import resources
+from importlib.resources.abc import Traversable
 
 import httpx
 from bs4 import BeautifulSoup
 from docx import Document
 
+from news_push.clock import Clock, LocalClock
 from news_push.http import retry_http_call
 
 SC_FGW_HOME_URL = "https://fgw.sc.gov.cn"
@@ -40,7 +42,12 @@ class OilAttachment:
 
 
 class OilAdjustmentCalendar:
-    def __init__(self, adjustment_dates_by_year: dict[int, set[str]] | None = None) -> None:
+    def __init__(
+        self,
+        adjustment_dates_by_year: dict[int, set[str]] | None = None,
+        data_dirs: list[Traversable] | None = None,
+    ) -> None:
+        self.data_dirs = data_dirs or []
         self.adjustment_dates_by_year = adjustment_dates_by_year or self._load_adjustment_dates_by_year()
 
     def is_adjustment_day(self, target_day: date) -> bool:
@@ -49,18 +56,23 @@ class OilAdjustmentCalendar:
             return False
         return target_day.isoformat() in year_dates
 
+    def has_year(self, year: int) -> bool:
+        return year in self.adjustment_dates_by_year
+
     def _load_adjustment_dates_by_year(self) -> dict[int, set[str]]:
-        data_dir = resources.files("news_push").joinpath("data")
         adjustment_dates_by_year: dict[int, set[str]] = {}
-        if not data_dir.is_dir():
-            logger.warning("oil adjustment calendar data directory missing: %s", data_dir)
-            return adjustment_dates_by_year
-        for item in data_dir.iterdir():
-            if not item.name.startswith("oil_calendar_") or item.suffix != ".json":
+        package_data_dir = resources.files("news_push").joinpath("data")
+        for data_dir in [package_data_dir] + self.data_dirs:
+            if not data_dir.is_dir():
+                if data_dir == package_data_dir:
+                    logger.warning("oil adjustment calendar data directory missing: %s", data_dir)
                 continue
-            payload = json.loads(item.read_text(encoding="utf-8"))
-            year = int(payload["year"])
-            adjustment_dates_by_year[year] = set(payload.get("adjustment_dates", []))
+            for item in data_dir.iterdir():
+                if not item.name.startswith("oil_calendar_") or item.suffix != ".json":
+                    continue
+                payload = json.loads(item.read_text(encoding="utf-8"))
+                year = int(payload["year"])
+                adjustment_dates_by_year[year] = set(payload.get("adjustment_dates", []))
         return adjustment_dates_by_year
 
 
@@ -147,9 +159,10 @@ class OilPriceJob:
     bot: object
     state_store: object
     calendar: object | None = None
+    clock: Clock = LocalClock("Asia/Shanghai")
 
     def run(self, today: date | None = None) -> JobResult:
-        target_day = today or date.today()
+        target_day = today or self.clock.today()
         day_text = target_day.isoformat()
         if not self.state_store.claim_send("oil_price", day_text):
             logger.info("oil price skipped: already_sent")

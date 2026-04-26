@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+from datetime import date
+import json
 from pathlib import Path
 
 import news_push.app as app_module
@@ -56,6 +58,7 @@ class FakeImageJob:
     fetcher: object
     bot: object
     state_store: object
+    clock: object
 
     def run(self) -> NewsJobResult:
         return NewsJobResult(sent=True, reason="sent")
@@ -66,6 +69,8 @@ class FakeOilJob:
     source: object
     bot: object
     state_store: object
+    clock: object
+    calendar: object
 
     def run(self) -> NewsJobResult:
         return NewsJobResult(sent=False, reason="listing_missing")
@@ -74,6 +79,14 @@ class FakeOilJob:
 class FakeBot:
     def __init__(self, webhook_url: str) -> None:
         self.webhook_url = webhook_url
+
+
+class FixedClock:
+    def __init__(self, today: date) -> None:
+        self.today_value = today
+
+    def today(self) -> date:
+        return self.today_value
 
 
 def test_status_reports_jobs_and_webhook_state(monkeypatch, tmp_path: Path) -> None:
@@ -88,6 +101,7 @@ def test_status_reports_jobs_and_webhook_state(monkeypatch, tmp_path: Path) -> N
         wecom_webhook_url="https://example.com/webhook",
         image_base_url="https://example.com/images",
         state_file=tmp_path / "state.json",
+        oil_calendar_data_dir=tmp_path / "oil-calendar",
         timezone="Asia/Shanghai",
     )
 
@@ -111,6 +125,7 @@ def test_manual_job_run_returns_missing_webhook_when_not_configured(tmp_path: Pa
         wecom_webhook_url="",
         image_base_url="https://example.com/images",
         state_file=tmp_path / "state.json",
+        oil_calendar_data_dir=tmp_path / "oil-calendar",
         timezone="Asia/Shanghai",
     )
 
@@ -136,6 +151,7 @@ def test_manual_job_run_returns_job_result_when_configured(monkeypatch, tmp_path
         wecom_webhook_url="https://example.com/webhook",
         image_base_url="https://example.com/images",
         state_file=tmp_path / "state.json",
+        oil_calendar_data_dir=tmp_path / "oil-calendar",
         timezone="Asia/Shanghai",
     )
 
@@ -148,3 +164,59 @@ def test_manual_job_run_returns_job_result_when_configured(monkeypatch, tmp_path
             raise AssertionError("route not found: POST /jobs/news-image/run")
 
     assert run(exercise) == {"sent": True, "reason": "sent"}
+
+
+def test_ensure_oil_calendar_generates_missing_current_year(monkeypatch, tmp_path: Path) -> None:
+    generated: list[int] = []
+
+    class FakeOilCalendarGenerator:
+        def __init__(self, data_dir: Path, today: date, anchor_data_dirs: list[object]) -> None:
+            self.data_dir = data_dir
+            self.today = today
+
+        def generate(self, year: int) -> dict[str, object]:
+            generated.append(year)
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "year": year,
+                "adjustment_dates": [f"{year}-01-05"],
+            }
+            (self.data_dir / f"oil_calendar_{year}.json").write_text(
+                json.dumps(payload),
+                encoding="utf-8",
+            )
+            return payload
+
+    monkeypatch.setattr(app_module, "OilCalendarGenerator", FakeOilCalendarGenerator)
+    settings = Settings(
+        wecom_webhook_url="",
+        image_base_url="https://example.com/images",
+        state_file=tmp_path / "state.json",
+        oil_calendar_data_dir=tmp_path / "oil-calendar",
+        timezone="Asia/Shanghai",
+    )
+
+    calendar = app_module.ensure_oil_calendar(settings, FixedClock(date(2027, 1, 1)))
+
+    assert generated == [2027]
+    assert calendar.is_adjustment_day(date(2027, 1, 5)) is True
+
+
+def test_ensure_oil_calendar_uses_existing_current_year(tmp_path: Path) -> None:
+    oil_calendar_data_dir = tmp_path / "oil-calendar"
+    oil_calendar_data_dir.mkdir()
+    (oil_calendar_data_dir / "oil_calendar_2027.json").write_text(
+        json.dumps({"year": 2027, "adjustment_dates": ["2027-01-05"]}),
+        encoding="utf-8",
+    )
+    settings = Settings(
+        wecom_webhook_url="",
+        image_base_url="https://example.com/images",
+        state_file=tmp_path / "state.json",
+        oil_calendar_data_dir=oil_calendar_data_dir,
+        timezone="Asia/Shanghai",
+    )
+
+    calendar = app_module.ensure_oil_calendar(settings, FixedClock(date(2027, 1, 1)))
+
+    assert calendar.is_adjustment_day(date(2027, 1, 5)) is True

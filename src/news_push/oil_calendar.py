@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import date, timedelta
+from importlib.resources.abc import Traversable
 from pathlib import Path
 
 import httpx
@@ -60,6 +61,7 @@ class OilCalendarGenerator:
     data_dir: Path
     holiday_source: object | None = None
     today: date | None = None
+    anchor_data_dirs: list[Path | Traversable] | None = None
 
     def generate(self, year: int | None = None) -> dict[str, object]:
         target_year = year or (self.today or date.today()).year
@@ -102,12 +104,13 @@ class OilCalendarGenerator:
         return self.holiday_source or ChinaHolidaySource()
 
     def _resolve_anchor_previous_adjustment_date(self, year: int) -> str:
-        previous_path = self.data_dir / f"oil_calendar_{year - 1}.json"
-        if previous_path.exists():
-            payload = json.loads(previous_path.read_text(encoding="utf-8"))
-            adjustment_dates = payload.get("adjustment_dates", [])
-            if adjustment_dates:
-                return adjustment_dates[-1]
+        for data_dir in [self.data_dir] + list(self.anchor_data_dirs or []):
+            previous_path = data_dir / f"oil_calendar_{year - 1}.json"
+            if previous_path.exists():
+                payload = json.loads(previous_path.read_text(encoding="utf-8"))
+                adjustment_dates = payload.get("adjustment_dates", [])
+                if adjustment_dates:
+                    return adjustment_dates[-1]
         bootstrap_anchor = BOOTSTRAP_ANCHORS.get(year)
         if bootstrap_anchor is None:
             raise ValueError(f"missing previous-year oil calendar and bootstrap anchor for {year}")

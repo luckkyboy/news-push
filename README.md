@@ -80,6 +80,10 @@ scripts/
   - 默认值：`/tmp/news-push/state.db`
   - SQLite 状态库文件，用于记录“当天是否已发送”
   - 生产环境建议挂载到持久化目录
+- `OIL_CALENDAR_DATA_DIR`
+  - 选填
+  - 默认值：与 `STATE_FILE` 同级的 `oil-calendar` 目录
+  - 启动时如果缺少当年油价调价日 JSON，会自动生成到这个目录
 - `TZ`
   - 选填
   - 默认值：`Asia/Shanghai`
@@ -181,6 +185,7 @@ cp .env.example .env
 
 ```dotenv
 WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key
+OIL_CALENDAR_DATA_DIR=/data/oil-calendar
 ```
 
 可选变量：

@@ -11,6 +11,7 @@ STATE_DB_FILE="${DATA_DIR}/state.db"
 
 DEFAULT_IMAGE_BASE_URL="https://raw.githubusercontent.com/luckkyboy/news-data/main/static/images"
 DEFAULT_TZ="Asia/Shanghai"
+DEFAULT_OIL_CALENDAR_DATA_DIR="/data/oil-calendar"
 
 read_env_value() {
   local key="$1"
@@ -44,10 +45,12 @@ resolve_env_value() {
 write_env_file() {
   local webhook_url="$1"
   local image_base_url="$2"
-  local timezone="$3"
+  local oil_calendar_data_dir="$3"
+  local timezone="$4"
   cat > "${ENV_FILE}" <<EOF
 WECOM_WEBHOOK_URL=${webhook_url}
 NEWS_IMAGE_BASE_URL=${image_base_url}
+OIL_CALENDAR_DATA_DIR=${oil_calendar_data_dir}
 TZ=${timezone}
 EOF
 }
@@ -66,18 +69,21 @@ if [[ ! -f "${ENV_EXAMPLE_FILE}" ]]; then
   cat > "${ENV_EXAMPLE_FILE}" <<EOF
 WECOM_WEBHOOK_URL=https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=replace-me
 NEWS_IMAGE_BASE_URL=${DEFAULT_IMAGE_BASE_URL}
+OIL_CALENDAR_DATA_DIR=${DEFAULT_OIL_CALENDAR_DATA_DIR}
 TZ=${DEFAULT_TZ}
 EOF
 fi
 
 resolved_webhook_url=""
 resolved_image_base_url=""
+resolved_oil_calendar_data_dir=""
 resolved_timezone=""
 if [[ -f "${ENV_FILE}" ]]; then
   resolved_webhook_url="$(resolve_env_value "WECOM_WEBHOOK_URL" "")"
   resolved_image_base_url="$(resolve_env_value "NEWS_IMAGE_BASE_URL" "${DEFAULT_IMAGE_BASE_URL}")"
+  resolved_oil_calendar_data_dir="$(resolve_env_value "OIL_CALENDAR_DATA_DIR" "${DEFAULT_OIL_CALENDAR_DATA_DIR}")"
   resolved_timezone="$(resolve_env_value "TZ" "${DEFAULT_TZ}")"
-  write_env_file "${resolved_webhook_url}" "${resolved_image_base_url}" "${resolved_timezone}"
+  write_env_file "${resolved_webhook_url}" "${resolved_image_base_url}" "${resolved_oil_calendar_data_dir}" "${resolved_timezone}"
   echo "updated .env file: ${ENV_FILE}"
 else
   if [[ -z "${WECOM_WEBHOOK_URL:-}" ]]; then
@@ -88,8 +94,9 @@ else
   fi
   resolved_webhook_url="$(resolve_env_value "WECOM_WEBHOOK_URL" "")"
   resolved_image_base_url="$(resolve_env_value "NEWS_IMAGE_BASE_URL" "${DEFAULT_IMAGE_BASE_URL}")"
+  resolved_oil_calendar_data_dir="$(resolve_env_value "OIL_CALENDAR_DATA_DIR" "${DEFAULT_OIL_CALENDAR_DATA_DIR}")"
   resolved_timezone="$(resolve_env_value "TZ" "${DEFAULT_TZ}")"
-  write_env_file "${resolved_webhook_url}" "${resolved_image_base_url}" "${resolved_timezone}"
+  write_env_file "${resolved_webhook_url}" "${resolved_image_base_url}" "${resolved_oil_calendar_data_dir}" "${resolved_timezone}"
   echo "generated .env file: ${ENV_FILE}"
 fi
 

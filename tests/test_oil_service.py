@@ -60,6 +60,14 @@ class DummyCalendar:
         return self.is_adjustment_day_value
 
 
+class DummyClock:
+    def __init__(self, today: date) -> None:
+        self.today_value = today
+
+    def today(self) -> date:
+        return self.today_value
+
+
 class DummyBot:
     def __init__(self) -> None:
         self.messages: list[str] = []
@@ -136,6 +144,34 @@ def test_oil_job_sends_today_listing() -> None:
             },
         )
     ]
+
+
+def test_oil_job_uses_clock_when_today_is_not_provided() -> None:
+    source = DummyOilSource(
+        listing=OilListingItem(
+            title="成品油价格按机制上调",
+            date_text="2026-04-26",
+            page_url="https://fgw.sc.gov.cn/sfgw/tzgg/2026/4/26/abcd.shtml",
+        ),
+        attachment=OilAttachment(
+            href="file.docx",
+            attachment_url="https://fgw.sc.gov.cn/sfgw/tzgg/2026/4/26/file.docx",
+        ),
+    )
+    store = DummyStore()
+    job = OilPriceJob(
+        source=source,
+        bot=DummyBot(),
+        state_store=store,
+        calendar=DummyCalendar(True),
+        clock=DummyClock(date(2026, 4, 26)),
+    )
+
+    result = job.run()
+
+    assert result.sent is True
+    assert store.marked[0][1] == "2026-04-26"
+    assert source.calls == {"listing": 1, "attachment": 1, "prices": 1}
 
 
 def test_oil_job_skips_when_no_listing_found() -> None:

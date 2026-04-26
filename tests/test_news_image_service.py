@@ -26,6 +26,14 @@ class DummyBot:
         self.images.append(image_bytes)
 
 
+class DummyClock:
+    def __init__(self, today: date) -> None:
+        self.today_value = today
+
+    def today(self) -> date:
+        return self.today_value
+
+
 class DummyStore:
     def __init__(self, sent: bool = False) -> None:
         self.sent = sent
@@ -82,6 +90,25 @@ def test_run_sends_image_when_available() -> None:
             {"url": "https://raw.githubusercontent.com/luckkyboy/news-data/main/static/images/2026-03-30.png"},
         )
     ]
+
+
+def test_run_uses_clock_when_today_is_not_provided() -> None:
+    fetcher = DummyFetcher(exists=True, content=b"news-image")
+    bot = DummyBot()
+    store = DummyStore()
+    job = DailyImageJob(
+        image_base_url="https://example.com/images",
+        fetcher=fetcher,
+        bot=bot,
+        state_store=store,
+        clock=DummyClock(date(2026, 4, 26)),
+    )
+
+    result = job.run()
+
+    assert result.sent is True
+    assert fetcher.checked_urls == ["https://example.com/images/2026-04-26.png"]
+    assert store.marked[0][1] == "2026-04-26"
 
 
 def test_run_skips_when_already_sent() -> None:
