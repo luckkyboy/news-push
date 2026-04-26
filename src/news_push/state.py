@@ -5,12 +5,14 @@ from pathlib import Path
 import shutil
 import sqlite3
 from threading import RLock
+import time
 from typing import Any
 
 
 class StateStore:
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, pending_claim_ttl_seconds: int = 3600) -> None:
         self.path = path
+        self.pending_claim_ttl_seconds = pending_claim_ttl_seconds
         self._lock = RLock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self._bootstrap()
@@ -24,16 +26,25 @@ class StateStore:
         return row is not None
 
     def claim_send(self, channel: str, day: str) -> bool:
+        now = self._now()
+        expired_before = now - self.pending_claim_ttl_seconds
         with self._lock, self._connect() as connection:
-            try:
-                connection.execute(
-                    "INSERT INTO sends (channel, day, status, metadata) VALUES (?, ?, 'pending', ?)",
-                    (channel, day, "{}"),
-                )
-                connection.commit()
-                return True
-            except sqlite3.IntegrityError:
-                return False
+            cursor = connection.execute(
+                """
+                INSERT INTO sends (channel, day, status, metadata, created_at, updated_at)
+                VALUES (?, ?, 'pending', ?, ?, ?)
+                ON CONFLICT(channel, day) DO UPDATE SET
+                    status = 'pending',
+                    metadata = '{}',
+                    created_at = excluded.created_at,
+                    updated_at = excluded.updated_at
+                WHERE sends.status = 'pending'
+                    AND sends.updated_at < ?
+                """,
+                (channel, day, "{}", now, now, expired_before),
+            )
+            connection.commit()
+            return cursor.rowcount > 0
 
     def release_claim(self, channel: str, day: str) -> None:
         with self._lock, self._connect() as connection:
@@ -45,16 +56,18 @@ class StateStore:
 
     def complete_send(self, channel: str, day: str, metadata: dict[str, Any]) -> None:
         payload = json.dumps(metadata, ensure_ascii=False, sort_keys=True)
+        now = self._now()
         with self._lock, self._connect() as connection:
             connection.execute(
                 """
-                INSERT INTO sends (channel, day, status, metadata)
-                VALUES (?, ?, 'sent', ?)
+                INSERT INTO sends (channel, day, status, metadata, created_at, updated_at)
+                VALUES (?, ?, 'sent', ?, ?, ?)
                 ON CONFLICT(channel, day) DO UPDATE SET
                     status = 'sent',
-                    metadata = excluded.metadata
+                    metadata = excluded.metadata,
+                    updated_at = excluded.updated_at
                 """,
-                (channel, day, payload),
+                (channel, day, payload, now, now),
             )
             connection.commit()
 
@@ -87,36 +100,56 @@ class StateStore:
                     day TEXT NOT NULL,
                     status TEXT NOT NULL,
                     metadata TEXT NOT NULL DEFAULT '{}',
+                    created_at INTEGER NOT NULL DEFAULT 0,
+                    updated_at INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (channel, day)
                 )
                 """
             )
+            self._migrate_schema(connection)
             connection.commit()
 
             if legacy_payload:
+                now = self._now()
                 for channel, days in legacy_payload.items():
                     for day, metadata in days.items():
                         connection.execute(
                             """
-                            INSERT INTO sends (channel, day, status, metadata)
-                            VALUES (?, ?, 'sent', ?)
+                            INSERT INTO sends (channel, day, status, metadata, created_at, updated_at)
+                            VALUES (?, ?, 'sent', ?, ?, ?)
                             ON CONFLICT(channel, day) DO UPDATE SET
                                 status = 'sent',
-                                metadata = excluded.metadata
+                                metadata = excluded.metadata,
+                                updated_at = excluded.updated_at
                             """,
                             (
                                 channel,
                                 day,
                                 json.dumps(metadata, ensure_ascii=False, sort_keys=True),
+                                now,
+                                now,
                             ),
                         )
                 connection.commit()
+
+    def _migrate_schema(self, connection: sqlite3.Connection) -> None:
+        columns = {
+            row[1]
+            for row in connection.execute("PRAGMA table_info(sends)").fetchall()
+        }
+        if "created_at" not in columns:
+            connection.execute("ALTER TABLE sends ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0")
+        if "updated_at" not in columns:
+            connection.execute("ALTER TABLE sends ADD COLUMN updated_at INTEGER NOT NULL DEFAULT 0")
 
     def _connect(self) -> sqlite3.Connection:
         connection = sqlite3.connect(self.path)
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=NORMAL")
         return connection
+
+    def _now(self) -> int:
+        return int(time.time())
 
     def _load_legacy_json_if_needed(self) -> dict[str, dict[str, dict[str, Any]]]:
         if not self.path.exists():

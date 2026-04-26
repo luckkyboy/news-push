@@ -1,4 +1,5 @@
 from pathlib import Path
+import sqlite3
 
 import pytest
 
@@ -58,6 +59,47 @@ def test_claim_send_prevents_duplicate_claims_until_released(tmp_path: Path) -> 
     store.release_claim("news_image", "2026-03-30")
 
     assert store.claim_send("news_image", "2026-03-30") is True
+
+
+def test_expired_pending_claim_can_be_reclaimed(monkeypatch, tmp_path: Path) -> None:
+    store = StateStore(tmp_path / "state.db", pending_claim_ttl_seconds=60)
+    now = 1_000
+    monkeypatch.setattr(store, "_now", lambda: now)
+
+    assert store.claim_send("news_image", "2026-03-30") is True
+    assert store.claim_send("news_image", "2026-03-30") is False
+
+    now = 1_061
+
+    assert store.claim_send("news_image", "2026-03-30") is True
+
+
+def test_existing_sqlite_state_gets_timestamp_columns(tmp_path: Path) -> None:
+    state_file = tmp_path / "state.db"
+    with sqlite3.connect(state_file) as connection:
+        connection.execute(
+            """
+            CREATE TABLE sends (
+                channel TEXT NOT NULL,
+                day TEXT NOT NULL,
+                status TEXT NOT NULL,
+                metadata TEXT NOT NULL DEFAULT '{}',
+                PRIMARY KEY (channel, day)
+            )
+            """
+        )
+        connection.execute(
+            "INSERT INTO sends (channel, day, status, metadata) VALUES (?, ?, 'sent', ?)",
+            ("news_image", "2026-03-30", '{"url":"https://example.com/a.png"}'),
+        )
+
+    store = StateStore(state_file)
+
+    assert store.has_sent("news_image", "2026-03-30") is True
+    with sqlite3.connect(state_file) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(sends)").fetchall()}
+
+    assert {"created_at", "updated_at"} <= columns
 
 
 def test_complete_send_persists_metadata_in_sqlite_store(tmp_path: Path) -> None:
