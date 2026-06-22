@@ -89,7 +89,7 @@ else
   if [[ -z "${WECOM_WEBHOOK_URL:-}" ]]; then
     echo "WECOM_WEBHOOK_URL is required when .env does not exist"
     echo "set the webhook value, then rerun:"
-    echo "  WECOM_WEBHOOK_URL='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=your-key' bash scripts/deploy_docker.sh"
+    echo "  WECOM_WEBHOOK_URL='https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=73c8ab67-a7a5-4126-a81f-23454c23c3ef' bash scripts/deploy_docker.sh"
     exit 1
   fi
   resolved_webhook_url="$(resolve_env_value "WECOM_WEBHOOK_URL" "")"
